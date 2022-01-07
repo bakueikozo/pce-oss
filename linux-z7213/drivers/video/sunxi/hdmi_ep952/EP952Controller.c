@@ -277,7 +277,9 @@ void EP952Controller_Timer(void)
 #endif
 
 }
-
+extern hpd_delay_enable;
+extern hpd_delay;
+extern g_ep952_enabled;
 void EP952Controller_Task(void)
 {
 	int ignore_edid = 0;
@@ -503,6 +505,13 @@ void EP952Controller_Task(void)
 				TXS_RollBack_Stream();
 				TX_State = TXS_Search_EDID;
 				edid_retry_count = 0;
+			} else {
+				if (hpd_delay_enable == 1) {
+					if ( (g_ep952_enabled == 1) && (hpd_delay == 1) && (is_ReceiverSense == 1) ) {
+						msleep(1000);
+						hpd_delay = 0;
+					}
+				}
 			}
 
 #if Enable_HDCP

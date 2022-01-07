@@ -1841,11 +1841,11 @@ s32 disp_al_layer_set_extra_info(u32 screen_id, u32 layer_id, disp_layer_info *i
 			/* scaler --> !scaler */
 			scaler_release(extra_info->scaler_id, true);
 			extra_info->b_scaler_mode = 0;
-			DE_BE_Layer_Video_Enable(screen_id, layer_id, false);
-			DE_BE_Layer_Video_Ch_Sel(screen_id, layer_id, 0);
 		} else {
 			/* !scaler --> !scaler */
 		}
+		DE_BE_Layer_Video_Enable(screen_id, layer_id, false);
+		DE_BE_Layer_Video_Ch_Sel(screen_id, layer_id, 0);
 	}
 
 	return 0;

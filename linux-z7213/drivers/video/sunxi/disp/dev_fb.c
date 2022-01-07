@@ -304,6 +304,30 @@ s32 fb_draw_gray_pictures(u32 base, u32 width, u32 height, struct fb_var_screeni
 	}
 	return 0;
 }
+#ifdef CONFIG_SUNXI_FB_DRAW_BOOTLOGO
+#include "bootlogo.h"
+
+s32 fb_draw_logo(u32 *logo, u32 base, u32 width, u32 height, struct fb_var_screeninfo *var)
+{
+	u32 i=0, j=0, addr=0, value=0, count=0;
+
+	for(i = 0; i<height; i++)	{
+		for(j = 0; j<width; j++) {
+			addr = base + (i*width+ j)*4;
+			// for situation which bootlog width is smaller than fb width
+			// this check will show bootlogo at fb's upper left
+			if ((j > BOOTLOGO_WIDTH - 1)) {
+				value = 0x0;
+			} else {
+				value = logo[count];
+				count=count+1;
+			}
+			sys_put_wvalue(addr, value);
+		}
+	}
+	return 0;
+}
+#endif
 
 static int Fb_map_video_memory(struct fb_info *info)
 {
@@ -1412,7 +1436,7 @@ s32 Fb_Init(void)
 				fb_para.fb_mode = FB_MODE_SCREEN2;
 			}
 
-#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EXTERNAL_HDMI)
+#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EP952)
 			//fb_para.fb_mode = g_fbi.disp_init.output_mode[0];
 
 			fb_para.output_width = bsp_disp_get_screen_width_from_output_type(0, DISP_OUTPUT_TYPE_HDMI, g_fbi.disp_init.output_mode[0]);
@@ -1424,6 +1448,9 @@ s32 Fb_Init(void)
 			register_framebuffer(g_fbi.fbinfo[i]);
 #if defined (__FPGA_DEBUG__)
 			fb_draw_colorbar((u32 __force)g_fbi.fbinfo[i]->screen_base, fb_para.width, fb_para.height*fb_para.buffer_num, &(g_fbi.fbinfo[i]->var));
+#endif
+#ifdef CONFIG_SUNXI_FB_DRAW_BOOTLOGO
+			fb_draw_logo(logo, (u32 __force)g_fbi.fbinfo[i]->screen_base, fb_para.width, fb_para.height*fb_para.buffer_num, &(g_fbi.fbinfo[i]->var));
 #endif
 		}
 

@@ -8,6 +8,7 @@ extern s32 ep952_set_mode(disp_tv_mode hdmi_mode);
 extern s32 ep952_open(void);
 extern s32 ep952_close(void);
 extern s32 ep952_get_hpd_status(void);
+extern s32 ep952_get_video_timing_info(disp_video_timing **video_info);
 
 static void LCD_power_on(u32 sel);
 static void LCD_power_off(u32 sel);
@@ -159,7 +160,8 @@ static void LCD_panel_exit(u32 sel)
 }
 
 //sel: 0:lcd0; 1:lcd1
-static s32 LCD_user_defined_func(u32 sel, u32 para1, u32 para2, u32 para3)
+//static s32 LCD_user_defined_func(u32 sel, u32 para1, u32 para2, u32 para3)
+static s32 LCD_user_defined_func(u32 sel, u32 para1, u32 para2, disp_video_timing **para3)
 {
 	s32 ret = -1;
 	switch(para1){
@@ -174,6 +176,9 @@ static s32 LCD_user_defined_func(u32 sel, u32 para1, u32 para2, u32 para3)
 			break;
 		case 3:
 			ret = ep952_get_hpd_status();
+			break;
+		case 4:
+			ret = ep952_get_video_timing_info(para3);
 			break;
 		default:
 			break;

@@ -32,6 +32,10 @@
 #include <linux/pm.h>
 #include <linux/power/scenelock.h>
 
+#if defined(CONFIG_SWITCH) || defined(CONFIG_ANDROID_SWITCH)
+#include <linux/switch.h>
+#endif
+
 #include "sunxi_codecdma.h"
 #include "sun8iw5_sndcodec.h"
 #ifdef CONFIG_SND_SOC_APA3165
@@ -56,6 +60,7 @@ script_item_u linein_item;
 struct timer_list linein_jack_timer;
 struct mutex linein_mutex;
 static bool linein_plugin = false;
+static int  audio_jack_sts = -1;
 
 /*for phone call flag*/
 static bool codec_analog_phonein_en		   = false;
@@ -210,6 +215,12 @@ static struct label reg_labels[]={
 };
 
 static struct clk *codec_pll2clk,*codec_moduleclk,*codec_srcclk;
+
+#if defined(CONFIG_SWITCH) || defined(CONFIG_ANDROID_SWITCH)
+static struct switch_dev audio_jack_dev = {
+    .name = "audio_jack",
+};
+#endif
 
 static unsigned int read_prcm_wvalue(unsigned int addr)
 {
@@ -404,6 +415,10 @@ int snd_codec_put_volsw(struct	snd_kcontrol	*kcontrol,
 			val2	=	max	- val2;
 		val_mask |= mask <<rshift;
 		val |= val2 <<rshift;
+	}
+	if (reg == HP_VOLC) {
+		pr_err("set vol to %d\n",(val & val_mask));
+		earpiece_vol = headphone_vol = pa_vol = (val & val_mask);
 	}
 
 	return codec_wrreg_prcm_bits(reg, val_mask, val);
@@ -1032,6 +1047,15 @@ static void linein_jack_events(unsigned long arg)
 				}
 			}
 		}
+
+		#if defined(CONFIG_SWITCH) || defined(CONFIG_ANDROID_SWITCH)
+		if(ret != audio_jack_sts)
+		{
+			audio_jack_sts = ret;
+			switch_set_state(&audio_jack_dev, audio_jack_sts);
+		}
+		#endif
+
 		mod_timer(&linein_jack_timer, jiffies + msecs_to_jiffies(LINEIN_JACK_TIME));
 	}
 }
@@ -2136,7 +2160,7 @@ static int codec_set_earpieceout(struct snd_kcontrol *kcontrol,
 		codec_wr_prcm_control(PAEN_HP_CTRL, 0x3, HPCOM_FC, 0x1);
 		codec_wr_prcm_control(ADDA_APT2, 0x1, ZERO_CROSS_EN, 0x1);
 
-		for(i=0; i < headphone_vol; i++) {
+		for(i=0; i < earpiece_vol; i++) {
 			/*set HPVOL volume*/
 			codec_wr_prcm_control(HP_VOLC, 0x3f, HPVOL, i);
 			reg_val = read_prcm_wvalue(HP_VOLC);
@@ -3556,6 +3580,11 @@ static int __init sndpcm_codec_probe(struct platform_device *pdev)
 			printk("[ audio ] err:try to get audio_linein_ctrl failed!\n");
 			return -EFAULT;
 		}
+		else {
+			#if defined(CONFIG_SWITCH) || defined(CONFIG_ANDROID_SWITCH)
+			switch_dev_register(&audio_jack_dev);
+			#endif
+		}
 	}
 	/**
 	*If use the aif2,aif3 interface in the audiocodec,
@@ -3724,6 +3753,9 @@ module_init(sndpcm_codec_init);
 static void __exit sndpcm_codec_exit(void)
 {
 	platform_driver_unregister(&sndpcm_codec_driver);
+	#if defined(CONFIG_SWITCH) || defined(CONFIG_ANDROID_SWITCH)
+	switch_dev_unregister(&audio_jack_dev);
+	#endif
 }
 module_exit(sndpcm_codec_exit);
 

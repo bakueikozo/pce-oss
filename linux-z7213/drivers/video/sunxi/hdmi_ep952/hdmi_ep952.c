@@ -9,9 +9,9 @@
 #include <linux/vmalloc.h>
 #include <linux/fs.h>
 #include <linux/dma-mapping.h>
-#include <linux/sched.h>   //wake_up_process()
-#include <linux/kthread.h> //kthread_create()??ï¿½ï¿½|kthread_run()
-#include <linux/err.h> //IS_ERR()??ï¿½ï¿½|PTR_ERR()
+#include <linux/sched.h>
+#include <linux/kthread.h>
+#include <linux/err.h>
 #include <linux/platform_device.h>
 #include <linux/errno.h>
 #include <linux/slab.h>
@@ -26,7 +26,6 @@
 #include <linux/switch.h> // switch_dev
 #include <mach/sys_config.h>
 #include <mach/platform.h>
-//#include "../disp/disp_sys_intf.h"
 #include <video/drv_display.h>
 #include "EP952api.h"
 #include "../disp/OSAL/OSAL.h"
@@ -39,13 +38,14 @@
 #define HDMI480P            3
 #define HDMI576P            17
 #define EP952_DETECT_HPD
-//static char modules_name[32] = "ep952";
 static char key_name[20] = "hdmi_ep952_para";
 static u32 hdmi_used = 0;
 
-static int g_ep952_enabled = 0;
-static disp_tv_mode g_hdmi_mode = DISP_TV_MOD_720P_50HZ;
-static unsigned char g_hdmi_vic = HDMI720P_50;
+int hpd_delay_enable = 0;
+int hpd_delay = 0;
+int g_ep952_enabled = 0;
+static disp_tv_mode g_hdmi_mode = DISP_TV_MOD_720P_60HZ;
+static unsigned char g_hdmi_vic = HDMI720P_60;
 static unsigned char g_hpd_state = 0;
 static unsigned char sunxi_edid[256] = {0};
 
@@ -53,22 +53,20 @@ static u32 hdmi_i2c_id = 0;
 static u32 hdmi_i2c_used = 0;
 static u32 ddc_i2c_id = 0;
 static u32 ddc_i2c_used = 0;
-//static u32 hdmi_screen_id = 0;
 static u32 hdmi_power_used = 0;
 static char hdmi_power[16] = {0};
 
-//static bool hdmi_io_used[28];
-//static disp_gpio_set_t hdmi_io[28];
 static bool hdmi_gpio_used[4];
 static disp_gpio_set_t hdmi_gpio[4];
-static struct i2c_adapter *hdmi_i2c_adapter = NULL;
 static struct i2c_adapter *ep952_i2c_adapter = NULL;
 static struct i2c_adapter *ddc_i2c_adapter = NULL;
 static struct i2c_client *ep952_i2c_client;
-static struct disp_device *ep952_device = NULL;
-//static disp_vdevice_source_ops hdmi_source_ops;
 
 static struct task_struct *ep952_task = NULL;
+
+static struct cdev *ep952_cdev;
+static dev_t devid ;
+static struct class *ep952_class;
 
 #if defined(CONFIG_SWITCH) || defined(CONFIG_ANDROID_SWITCH)
 static struct switch_dev hdmi_switch_dev = {
@@ -85,15 +83,14 @@ s32 ep952_i2c_read(u32 client_addr,u8 sub_addr,u8 * data,int size);
 s32 ep952_i2c_send(struct i2c_msg *msgs, int msg_count);
 extern struct i2c_adapter *i2c_get_adapter(int nr);
 
-//extern struct disp_device* disp_vdevice_register(disp_vdevice_init_data *data);
-//extern s32 disp_vdevice_unregister(struct disp_device *vdevice);
-//extern s32 disp_vdevice_get_source_ops(disp_vdevice_source_ops *ops);
-//extern unsigned int disp_boot_para_parse(void);
-
 extern void EP952Controller_Timer(void);
 extern void EP952Controller_Task(void);
 extern unsigned char HDMI_Tx_hpd_state(void);
 extern SMBUS_STATUS EP952_Reg_Read(unsigned char ByteAddr, unsigned char *Data, unsigned int Size);
+extern int OSAL_Power_Enable(char *name);
+extern int OSAL_Power_Disable(char *name);
+extern __hdle OSAL_GPIO_Request(disp_gpio_set_t *gpio_list, u32 group_count_max);
+extern s32 OSAL_GPIO_Release(__hdle p_handler, s32 if_release_to_default_status);
 
 static disp_video_timing video_timing[] =
 {
@@ -108,33 +105,33 @@ static disp_video_timing video_timing[] =
 
 static int hdmi_parse_config(void)
 {
-	printk("%s:%d\n", __func__, __LINE__);
-	disp_gpio_set_t  *gpio_info;
-	int i, ret;
-	char io_name[32];
-	script_item_u   val;
-	for(i=0; i<2; i++) {
-		gpio_info = &(hdmi_gpio[i]);
-		sprintf(io_name, "gpio_%d", i);
+    printk("%s:%d\n", __func__, __LINE__);
+    disp_gpio_set_t  *gpio_info;
+    int i, ret;
+    char io_name[32];
+    script_item_u   val;
+    for(i=0; i<2; i++) {
+        gpio_info = &(hdmi_gpio[i]);
+        sprintf(io_name, "gpio_%d", i);
 
-		printk("%s:%d\n", __func__, __LINE__);
-		ret = script_get_item(key_name, io_name, &val);
-		if (ret == 3) {
-			gpio_info->gpio = val.gpio.gpio;
-			gpio_info->mul_sel = val.gpio.mul_sel;
-			gpio_info->pull = val.gpio.pull;
-			gpio_info->drv_level = val.gpio.drv_level;
-			gpio_info->data = val.gpio.data;
-			memcpy(gpio_info->gpio_name, io_name, strlen(io_name)+1);
-			printk("gpio get success!\n");
-			hdmi_gpio_used[i]= 1;
-		}
-		else
-			continue;
-	}
+        printk("%s:%d\n", __func__, __LINE__);
+        ret = script_get_item(key_name, io_name, &val);
+        if (ret == 3) {
+            gpio_info->gpio = val.gpio.gpio;
+            gpio_info->mul_sel = val.gpio.mul_sel;
+            gpio_info->pull = val.gpio.pull;
+            gpio_info->drv_level = val.gpio.drv_level;
+            gpio_info->data = val.gpio.data;
+            memcpy(gpio_info->gpio_name, io_name, strlen(io_name)+1);
+            printk("gpio get success!\n");
+            hdmi_gpio_used[i]= 1;
+        }
+        else
+            continue;
+    }
 
-	printk("%s:%d\n", __func__, __LINE__);
-	return 0;
+    printk("%s:%d\n", __func__, __LINE__);
+    return 0;
 }
 
 // bon: 0-disable the gpio, 1-out as same as configed.
@@ -150,93 +147,21 @@ int hdmi_gpio_config(int gpio_id, int bon)
         if(!bon) {
             gpio_info->mul_sel = 7;
         }
-	printk("%s: gpio_info->mul_sel = %d\n", __func__, gpio_info->mul_sel);
+    printk("%s: gpio_info->mul_sel = %d\n", __func__, gpio_info->mul_sel);
         hdl = OSAL_GPIO_Request(gpio_info, 1);
         OSAL_GPIO_Release(hdl, 2);
     }
     return 0;
 }
 
-#if 0
-
-int hdmi_pin_config(u32 bon)
-{
-    int hdl,i;
-
-    for(i=0; i<28; i++) {
-        if(hdmi_io_used[i]) {
-            disp_gpio_set_t  gpio_info[1];
-
-            memcpy(gpio_info, &(hdmi_io[i]), sizeof(disp_gpio_set_t));
-            if(!bon) {
-                gpio_info->mul_sel = 7;
-            }
-            hdl = disp_sys_gpio_request(gpio_info, 1);
-            disp_sys_gpio_release(hdl, 2);
-        }
-    }
-    return 0;
-}
-#endif
-
-
 static int hdmi_power_enable(char *name)
 {
-	return OSAL_Power_Enable(name);
-/*
-	struct regulator *regu= NULL;
-	int ret = 0;
-	regu= regulator_get(NULL, name);
-	if (IS_ERR(regu)) {
-		pr_err("%s: some error happen, fail to get regulator %s\n", __func__, name);
-		goto exit;
-	}
-
-	//enalbe regulator
-	ret = regulator_enable(regu);
-	if (0 != ret) {
-		pr_err("%s: some error happen, fail to enable regulator %s!\n", __func__, name);
-		goto exit1;
-	} else {
-		__inf("suceess to enable regulator %s!\n", name);
-	}
-
-exit1:
-	//put regulater, when module exit
-	regulator_put(regu);
-exit:
-	return ret;
-*/
+    return OSAL_Power_Enable(name);
 }
 
 static int hdmi_power_disable(char *name)
 {
-
-	return OSAL_Power_Disable(name);
-#if 0
-	struct regulator *regu= NULL;
-	int ret = 0;
-	regu= regulator_get(NULL, name);
-	if (IS_ERR(regu)) {
-		__wrn("%s: some error happen, fail to get regulator %s\n", __func__, name);
-		goto exit;
-	}
-
-	//disalbe regulator
-	ret = regulator_disable(regu);
-	if (0 != ret) {
-		__wrn("%s: some error happen, fail to disable regulator %s!\n", __func__, name);
-		goto exit1;
-	} else {
-		__inf("suceess to disable regulator %s!\n", name);
-	}
-
-exit1:
-	//put regulater, when module exit
-	regulator_put(regu);
-exit:
-	return ret;
-#endif
+    return OSAL_Power_Disable(name);
 }
 
 
@@ -246,11 +171,9 @@ s32 ep952_hdmi_power_on(u32 on_off)
         return 0;
 
     if(on_off)
-    	hdmi_power_enable(hdmi_power);
-//        disp_sys_power_enable(hdmi_power);
+        hdmi_power_enable(hdmi_power);
     else;
         hdmi_power_disable(hdmi_power);
- //       disp_sys_power_disable(hdmi_power);
 
     return 0;
 }
@@ -288,7 +211,13 @@ static void ep952_update_hpd_status(void)
         if(s_hpd_change_count++ >= 10) {
             s_hpd_change_count = 0;
             g_hpd_state = current_state;
+#if defined(CONFIG_SWITCH) || defined(CONFIG_ANDROID_SWITCH)
             switch_set_state(&hdmi_switch_dev, current_state);
+            // only delay hpd while issue hpd kernel event
+            if (hpd_delay_enable == 1) {
+                hpd_delay = current_state;
+            }
+#endif
         }
     } else {
         s_hpd_change_count = 0;
@@ -299,21 +228,17 @@ s32 ep952_get_hpd_status(void)
 {
     return g_hpd_state;
 }
+EXPORT_SYMBOL(ep952_get_hpd_status);
 
 int ep952_thread(void *parg)
 {
-	unsigned int timeout = HZ / 50; // 20ms
+
+    unsigned int timeout = HZ / 50; // 20ms
     printk("%s:%d\n", __func__, __LINE__);
-    while(1) {
-        if(kthread_should_stop()) {
-            break;
-        }
+    while(!kthread_should_stop()) {
         ep952_update_hpd_status();
-        //printk("ep952 tx hpd state [%d]\n",ep952_get_hpd_status());
-        if(g_ep952_enabled) {
-           EP952Controller_Timer();
-           EP952Controller_Task();
-        }
+        EP952Controller_Timer();
+        EP952Controller_Task();
         set_current_state(TASK_INTERRUPTIBLE);
         schedule_timeout(timeout);
     }
@@ -322,7 +247,7 @@ int ep952_thread(void *parg)
 
 int ep952_thread_enable(void)
 {
-	int err;
+    int err;
 
     if(ep952_task)
         return 0;
@@ -336,7 +261,7 @@ int ep952_thread_enable(void)
     } else {
         wake_up_process(ep952_task);
     }
-	return 0;
+    return 0;
 }
 
 int ep952_thread_disable(void)
@@ -345,13 +270,14 @@ int ep952_thread_disable(void)
         kthread_stop(ep952_task);
         ep952_task = NULL;
     }
-	return 0;
+    return 0;
 }
 
 s32 ep952_get_mode()
 {
-	return g_hdmi_mode;
+    return g_hdmi_mode;
 }
+EXPORT_SYMBOL(ep952_get_mode);
 
 s32 ep952_check_mode_support(disp_tv_mode hdmi_mode)
 {
@@ -376,7 +302,7 @@ s32 ep952_check_mode_support(disp_tv_mode hdmi_mode)
         return 0;
     }
 }
-
+EXPORT_SYMBOL(ep952_check_mode_support);
 
 s32 ep952_get_mode_support(disp_tv_mode hdmi_mode)
 {
@@ -396,19 +322,20 @@ s32 ep952_get_mode_support(disp_tv_mode hdmi_mode)
 s32 ep952_set_mode(disp_tv_mode hdmi_mode)
 {
 
-	printk("%s: ====hdmi_mode = %d\n", __func__, hdmi_mode);
+    printk("%s: ====hdmi_mode = %d\n", __func__, hdmi_mode);
 
     if(ep952_get_mode_support(hdmi_mode)) {
         g_hdmi_mode = hdmi_mode;
         g_hdmi_vic = mode2vic(hdmi_mode);
-	    printk("%s: ====g_hdmi_vic = %d\n", __func__, g_hdmi_vic);
+        printk("%s: ====g_hdmi_vic = %d\n", __func__, g_hdmi_vic);
         if(g_ep952_enabled) {
             EP_HDMI_Set_Video_Timing(g_hdmi_vic);
         }
     }
-    
+
     return 0;
 }
+EXPORT_SYMBOL(ep952_set_mode);
 
 s32 ep952_get_video_timing_info(disp_video_timing **video_info)
 {
@@ -429,23 +356,8 @@ s32 ep952_get_video_timing_info(disp_video_timing **video_info)
     return ret;
 }
 
-/*
-static s32 ep952_hdmi_get_interface_para(void* para)
-{
-    disp_vdevice_interface_para *intf_para = (disp_vdevice_interface_para *)para;
-    if(NULL == para) {
-        printk("%s: null pointer\n", __func__);
-        return -1;
-    }
-    intf_para->intf = 0;
-    intf_para->sub_intf = 0;
-    intf_para->sequence = 0;
-    intf_para->clk_phase = 1;
-    intf_para->sync_polarity = 3;
+EXPORT_SYMBOL(ep952_get_video_timing_info);
 
-    return 0;
-}
-*/
 //0:rgb;  1:yuv
 static s32 ep952_get_input_csc(void)
 {
@@ -454,52 +366,39 @@ static s32 ep952_get_input_csc(void)
 
 s32 ep952_open(void)
 {
-	printk("%s:%d\n", __func__, __LINE__);
-	ep952_thread_disable();
-	ep952_hdmi_power_on(1);
-	//   hdmi_pin_config(1);
-	//   msleep(100);
-	//   if(hdmi_source_ops.tcon_enable)
-	//       hdmi_source_ops.tcon_enable(ep952_device);
-	//msleep(100);
+    printk("%s:%d\n", __func__, __LINE__);
+    ep952_hdmi_power_on(1);
 #if !defined(EP952_DETECT_HPD)
-	    EP_HDMI_Init();
+        EP_HDMI_Init();
 #endif
-	EP_HDMI_Set_Video_Timing(g_hdmi_vic);               // 720p50hz
-	EP_HDMI_Set_Audio_Fmt(AUD_I2S, AUD_SF_48000Hz);     // IIS input , 48KHz
-	g_ep952_enabled = 1;
-	printk("%s:%d\n", __func__, __LINE__);
-
-	ep952_thread_enable();
-
-	return 0;
+    EP_HDMI_Set_Video_Timing(g_hdmi_vic);               // 720p50hz
+    EP_HDMI_Set_Audio_Fmt(AUD_I2S, AUD_SF_48000Hz);     // IIS input , 48KHz
+    g_ep952_enabled = 1;
+    printk("%s:%d\n", __func__, __LINE__);
+    return 0;
 }
+EXPORT_SYMBOL(ep952_open);
 
 s32 ep952_close(void)
 {
     printk("%s:%d\n", __func__, __LINE__);
-	g_ep952_enabled = 0;
-//    if(hdmi_source_ops.tcon_disable)
-//        hdmi_source_ops.tcon_disable(ep952_device);
-//    msleep(100);
-//    hdmi_pin_config(0);
+    g_ep952_enabled = 0;
     ep952_hdmi_power_on(0);
     msleep(100);
     return 0;
 }
+EXPORT_SYMBOL(ep952_close);
 
 static int ep952_suspend(void)
 {
-	ep952_close();
-	ep952_thread_disable();
-	return 0;
+    ep952_close();
+    return 0;
 }
 
 static int ep952_resume(void)
 {
-	//ep952_thread_enable();
-	ep952_open();
-	return 0;
+    ep952_open();
+    return 0;
 }
 
 static int ep952_early_suspend(void)
@@ -541,51 +440,26 @@ ssize_t hdmi_i2c_store_regs(struct device *dev, struct device_attribute *attr, c
 static DEVICE_ATTR(regs, S_IRUGO|S_IWUSR|S_IWGRP,
     hdmi_i2c_show_regs, hdmi_i2c_store_regs);
 
+int (*ep952_hdmi_register)(void);
 static int hdmi_i2c_probe(struct i2c_client *client, const struct i2c_device_id *id)
 {
 
-	printk("%s:%d\n", __func__, __LINE__);
-	ep952_i2c_client = client;
-#if 0
-    disp_vdevice_init_data init_data;
+    printk("%s:%d\n", __func__, __LINE__);
+    ep952_i2c_client = client;
 
-    pr_info("[DISP_I2C] hdmi_i2c_probe\n");
-    memset(&init_data, 0, sizeof(disp_vdevice_init_data));
-
-    init_data.disp = hdmi_screen_id;
-    memcpy(init_data.name, modules_name, 32);
-    init_data.type = DISP_OUTPUT_TYPE_HDMI;
-    init_data.fix_timing = 0;
-
-    init_data.func.enable = ep952_open;
-    init_data.func.disable = ep952_close;
-    init_data.func.set_mode = ep952_set_mode;
-    init_data.func.mode_support = ep952_get_mode_support;
-    init_data.func.get_HPD_status = ep952_get_hpd_status;
-    init_data.func.get_input_csc = ep952_get_input_csc;
-    init_data.func.get_video_timing_info = ep952_get_video_timing_info;
-	init_data.func.suspend = ep952_suspend;
-	init_data.func.resume = ep952_resume;
-	init_data.func.early_suspend = ep952_early_suspend;
-	init_data.func.late_resume = ep952_late_resume;
-    init_data.func.get_interface_para = ep952_hdmi_get_interface_para;
-// 	disp_vdevice_get_source_ops(&hdmi_source_ops);
-#endif
-
-	printk("%s:%d\n", __func__, __LINE__);
- 	hdmi_parse_config();
+    printk("%s:%d\n", __func__, __LINE__);
+     hdmi_parse_config();
 
 #if defined(EP952_DETECT_HPD)
-	EP_HDMI_Init();
+    EP_HDMI_Init();
 #endif
-	//EP_HDMI_Init();
 
     #if defined(CONFIG_SWITCH) || defined(CONFIG_ANDROID_SWITCH)
     switch_dev_register(&hdmi_switch_dev);
     #endif
-	ep952_thread_enable();
-	bsp_extern_hdmi_register();
-    //ep952_device = disp_vdevice_register(&init_data);
+    ep952_thread_enable();
+    ep952_hdmi_register = bsp_extern_hdmi_register;
+    ep952_hdmi_register();
 
     int ret;
     ret = device_create_file(&client->dev, &dev_attr_regs);
@@ -600,9 +474,7 @@ err:
 
 static int __devexit hdmi_i2c_remove(struct i2c_client *client)
 {
-    if(ep952_device);
-//        disp_vdevice_unregister(ep952_device);
-    ep952_device = NULL;
+    switch_dev_unregister(&hdmi_switch_dev);
     return 0;
 }
 
@@ -614,18 +486,18 @@ MODULE_DEVICE_TABLE(i2c, hdmi_i2c_id_table);
 
 static int hdmi_i2c_detect(struct i2c_client *client, struct i2c_board_info *info)
 {
-	printk("%s=============\n",__func__);
-	if(hdmi_i2c_id == client->adapter->nr) {
-		printk("%s==111111===========\n",__func__);
-		const char *type_name = "hdmi_i2c";
-		ep952_i2c_adapter = client->adapter;
-		printk("[DISP_I2C] hdmi_i2c_detect, get right i2c adapter, id=%d, i2c adapter=%x\n",
-			ep952_i2c_adapter->nr, ep952_i2c_adapter);
-		strlcpy(info->type, type_name, I2C_NAME_SIZE);
-		return 0;
-	}
-	printk("err.\n");
-	return -ENODEV;
+    printk("%s=============\n",__func__);
+    if(hdmi_i2c_id == client->adapter->nr) {
+        printk("%s==111111===========\n",__func__);
+        const char *type_name = "hdmi_i2c";
+        ep952_i2c_adapter = client->adapter;
+        printk("[DISP_I2C] hdmi_i2c_detect, get right i2c adapter, id=%d, i2c adapter=%x\n",
+            ep952_i2c_adapter->nr, ep952_i2c_adapter);
+        strlcpy(info->type, type_name, I2C_NAME_SIZE);
+        return 0;
+    }
+    printk("err.\n");
+    return -ENODEV;
 }
 
 static  unsigned short normal_i2c[] = {0x29, I2C_CLIENT_END};
@@ -646,7 +518,6 @@ static struct i2c_driver hdmi_i2c_driver = {
 static int  hdmi_i2c_init(void)
 {
     int ret;
-   // int value;
     script_item_u value;
     ret = script_get_item(key_name, "hdmi_twi_used", &value);
     if(1 == ret && value.val) {
@@ -654,7 +525,7 @@ static int  hdmi_i2c_init(void)
         if(hdmi_i2c_used == 1) {
             ret = script_get_item(key_name, "hdmi_twi_id", &value);
             hdmi_i2c_id = (ret == SCIRPT_ITEM_VALUE_TYPE_INT)? value.val : hdmi_i2c_id;
-	    printk("hdmi i2c id = %d\n", hdmi_i2c_id);
+            printk("hdmi i2c id = %d\n", hdmi_i2c_id);
             return i2c_add_driver(&hdmi_i2c_driver);
         }
     }
@@ -672,22 +543,20 @@ MODULE_DEVICE_TABLE(i2c, ddc_i2c_id_table);
 
 static int ddc_i2c_detect(struct i2c_client *client, struct i2c_board_info *info)
 {
-	printk("%s=============\n",__func__);
-	if(ddc_i2c_id == client->adapter->nr) {
-		const char *type_name = "ddc_i2c";
-		ddc_i2c_adapter = client->adapter;
-		printk("[DDC_I2C] ddc_i2c_detect, get right i2c adapter, id=%d\n",ddc_i2c_adapter->nr);
-		strlcpy(info->type, type_name, I2C_NAME_SIZE);
-		return 0;
-	}
-	printk("[ERR]:ddc_i2c_detect err.\n");
-	return -ENODEV;
+    printk("%s=============\n",__func__);
+    if(ddc_i2c_id == client->adapter->nr) {
+        const char *type_name = "ddc_i2c";
+        ddc_i2c_adapter = client->adapter;
+        printk("[DDC_I2C] ddc_i2c_detect, get right i2c adapter, id=%d\n",ddc_i2c_adapter->nr);
+        strlcpy(info->type, type_name, I2C_NAME_SIZE);
+        return 0;
+    }
+    printk("[ERR]:ddc_i2c_detect err.\n");
+    return -ENODEV;
 }
 
 static struct i2c_driver ddc_i2c_driver = {
     .class = I2C_CLASS_HWMON,
-    //.probe        = ddc_i2c_probe,
-    //.remove        = __devexit_p(ddc_i2c_remove),
     .id_table    = ddc_i2c_id_table,
     .driver    = {
         .name    = "ddc_i2c",
@@ -707,7 +576,7 @@ static int  ddc_i2c_init(void)
         if(ddc_i2c_used == 1) {
             ret = script_get_item(key_name, "ddc_twi_id", &value);
             ddc_i2c_id = (ret == SCIRPT_ITEM_VALUE_TYPE_INT)? value.val : ddc_i2c_id;
-	    printk("ddc i2c id = %d\n", ddc_i2c_id);
+            printk("ddc i2c id = %d\n", ddc_i2c_id);
             return i2c_add_driver(&ddc_i2c_driver);
         }
     }
@@ -726,7 +595,6 @@ s32 ep952_i2c_write(u32 client_addr, u8 *data, int size)
 
     if(hdmi_i2c_used) {
         msg.addr = client_addr;
-        //msg.addr = ep952_i2c_client->addr;
         msg.flags = 0;
         msg.len = size;
         msg.buf = data;
@@ -742,15 +610,13 @@ s32 ep952_i2c_read(u32 client_addr, u8 sub_addr, u8 *data, int size)
     struct i2c_msg msgs[] = {
         {
             .addr   = client_addr,
-	    //.addr   = ep952_i2c_client->addr,
             .flags  = 0,
             .len    = 1,
             .buf    = &sub_addr,
         },
         {
             .addr   = client_addr,
-	    //.addr   = ep952_i2c_client->addr,
-	    .flags  = I2C_M_RD,
+        .flags  = I2C_M_RD,
             .len    = size,
             .buf    = data,
         },
@@ -797,15 +663,13 @@ s32 ddc_i2c_read(u32 client_addr, u8 sub_addr, u8 *data, int size)
     struct i2c_msg msgs[] = {
         {
             .addr   = client_addr,
-	    //.addr   = ep952_i2c_client->addr,
             .flags  = 0,
             .len    = 1,
             .buf    = &sub_addr,
         },
         {
             .addr   = client_addr,
-	    //.addr   = ep952_i2c_client->addr,
-	    .flags  = I2C_M_RD,
+        .flags  = I2C_M_RD,
             .len    = size,
             .buf    = data,
         },
@@ -830,56 +694,39 @@ s32 ddc_i2c_send(struct i2c_msg *msgs, int msg_count)
     return (ret==msg_count)?0:1;
 }
 
-s32 hdmi_i2c_write(u32 client_addr, u8 *data, int size)
+long ep952_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
-    s32 ret = 0;
-    struct i2c_msg msg;
+	unsigned long karg[4];
+	unsigned long ubuffer[4] = {0};
+	s32 ret = 0;
 
-	printk("hw..");
-    if(hdmi_i2c_adapter == NULL) {
-        hdmi_i2c_adapter = i2c_get_adapter(0); // fixme
-    }
-    if(hdmi_i2c_used) {
-        msg.addr = client_addr;
-        msg.flags = 0;
-        msg.len = size;
-        msg.buf = data;
-        ret = i2c_transfer(hdmi_i2c_adapter, &msg, 1);
-    }
+	if (copy_from_user((void*)karg,(void __user*)arg,4*sizeof(unsigned long))) {
+		__wrn("copy_from_user fail\n");
+		return -EFAULT;
+	}
 
-    return (ret==1)?0:2;
+	ubuffer[0] = *(unsigned long*)karg;
+	ubuffer[1] = (*(unsigned long*)(karg+1));
+	ubuffer[2] = (*(unsigned long*)(karg+2));
+	ubuffer[3] = (*(unsigned long*)(karg+3));
+
+	switch(cmd)	{
+		case DISP_CMD_HDMI_SUPPORT_MODE:
+			// returns:
+			// 0: mode not supported by connected display device
+			// 1: mode supported by connected display device
+			// 2: no connected display device
+			ret = ep952_check_mode_support(ubuffer[0]);
+			break;
+	}
+
+  return ret;
 }
 
-s32 hdmi_i2c_read(u32 client_addr, u8 sub_addr, u8 *data, int size)
-{
-    s32 ret = 0;
-    printk("hr..");
-
-    struct i2c_msg msgs[] = {
-        {
-            .addr   = client_addr,
-            .flags  = 0,
-            .len    = 1,
-            .buf    = &sub_addr,
-        },
-        {
-            .addr   = client_addr,
-            .flags  = I2C_M_RD,
-            .len    = size,
-            .buf    = data,
-        },
-    };
-
-    if(hdmi_i2c_adapter == NULL) {
-        hdmi_i2c_adapter = i2c_get_adapter(0); // fixme
-    }
-
-    if(hdmi_i2c_used) {
-        ret = i2c_transfer(hdmi_i2c_adapter, msgs, 2);
-    }
-
-    return (ret==2)?0:2;
-}
+static const struct file_operations ep952_fops = {
+	.owner    = THIS_MODULE,
+	.unlocked_ioctl = ep952_ioctl,
+};
 
 static int __init ep952_module_init(void)
 {
@@ -890,49 +737,78 @@ static int __init ep952_module_init(void)
 
     ret = script_get_item(key_name, "hdmi_used", &value);
     if(1 == ret) {
-       hdmi_used = value.val;
-       if(hdmi_used) {
-       		printk("hdmi used.\n");
-           ret = script_get_item(key_name, "hdmi_power", &value);
-           if(2 == ret) {
-               hdmi_power_used = 1;
-	       memcpy((void*)hdmi_power, (void*)value.str, strlen(value.str)+1);
-               printk("[HDMI] hdmi_power: %s\n", hdmi_power);
-           }
-	   ddc_i2c_init();
-           hdmi_i2c_init();
-#if 0
-           unsigned int value, output_type0, output_mode0, output_type1, output_mode1;
-           value = disp_boot_para_parse();
-           output_type0 = (value >> 8) & 0xff;
-           output_mode0 = (value) & 0xff;
-           output_type1 = (value >> 24)& 0xff;
-           output_mode1 = (value >> 16) & 0xff;
-           if((output_type0 == DISP_OUTPUT_TYPE_HDMI) ||
-           (output_type1 == DISP_OUTPUT_TYPE_HDMI)) {
-               printk("[HDMI]%s:smooth boot", __func__);
-               ep952_hdmi_power_on(1);
-               if(DISP_OUTPUT_TYPE_HDMI == output_type0)
-               g_hdmi_mode = output_mode0;
-               else if(DISP_OUTPUT_TYPE_HDMI == output_type1)
-               g_hdmi_mode = output_mode1;
-           }
-#endif
-       }
+        hdmi_used = value.val;
+        if(hdmi_used) {
+            printk("hdmi used.\n");
+            ret = script_get_item(key_name, "hdmi_power", &value);
+            if(2 == ret) {
+            hdmi_power_used = 1;
+            memcpy((void*)hdmi_power, (void*)value.str, strlen(value.str)+1);
+            printk("[HDMI] hdmi_power: %s\n", hdmi_power);
+            }
+
+            ret = script_get_item(key_name, "hpd_delay_enable", &value);
+            if(1 == ret) {
+                hpd_delay_enable =  value.val;
+            }
+
+            ddc_i2c_init();
+            hdmi_i2c_init();
+            ep952_thread_enable();
+
+            ep952_class = class_create(THIS_MODULE, "hdmi");
+            if (IS_ERR(ep952_class))	{
+                pr_err("failed to allocate class\n");
+                return PTR_ERR(ep952_class);
+            }
+            ret = alloc_chrdev_region(&devid, 0, 1, "hdmi_ep952");
+            if (ret < 0) {
+                pr_err("failed to allocate char device region\n");
+                goto remove_class;
+            }
+            ep952_cdev = cdev_alloc();
+            if (!ep952_cdev) {
+                ret = -ENOMEM;
+                goto remove_class;
+            }
+            cdev_init(ep952_cdev, &ep952_fops);
+            ep952_cdev->owner = THIS_MODULE;
+            ret = cdev_add(ep952_cdev, devid, 1);
+            if (ret) {
+                pr_err("failed to add char device\n");
+                goto remove_class;
+            }
+            if (device_create(ep952_class, NULL, devid, NULL, "hdmi_ep952") == NULL) {
+                goto del_cdev;
+            }
+        }
     } else
         hdmi_used = 0;
 
     return 0;
+
+del_cdev:
+    cdev_del(ep952_cdev);
+
+remove_class:
+    class_destroy(ep952_class);
+
+    return ret;
 }
 
 static void __exit ep952_module_exit(void)
 {
     pr_info("ep952_module_exit\n");
+    ep952_thread_disable();
     hdmi_i2c_exit();
     ddc_i2c_exit();
+
+    device_destroy(ep952_class,  devid);
+    class_destroy(ep952_class);
+    cdev_del(ep952_cdev);
 }
 
-fs_initcall(ep952_module_init);
+module_init(ep952_module_init);
 module_exit(ep952_module_exit);
 
 MODULE_AUTHOR("hezuyao");

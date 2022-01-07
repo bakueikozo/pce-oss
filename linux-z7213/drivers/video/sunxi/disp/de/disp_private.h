@@ -182,6 +182,7 @@ struct disp_lcd {
 	s32 (*get_hdmi_ep952_mode)(struct disp_lcd *lcd);
 	s32 (*get_hdmi_ep952_mode_support)(struct disp_lcd *lcd, disp_tv_mode tv_mode);
 	s32 (*set_hdmi_ep952_mode)(struct disp_lcd *lcd, disp_tv_mode tv_mode);
+	s32 (*get_esd_info)(struct disp_device *dispdev, struct disp_lcd_esd_info *p_esd_info);
 };
 extern struct disp_lcd* disp_get_lcd(u32 channel_id);
 

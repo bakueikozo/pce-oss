@@ -37,6 +37,11 @@ static dev_t devid ;
 static struct class *disp_class;
 struct device *display_dev;
 
+/* for switching LCD display feature */
+s32 disp_switch_enable = 0;
+u32 lcd_para = 0;
+extern void reinit_lcd0(void);
+
 u32 disp_print_cmd_level = 0;
 u32 disp_cmd_print = 0xffff;   //print cmd which eq disp_cmd_print
 #if defined(CONFIG_ARCH_SUN9IW1P1)
@@ -1613,6 +1618,11 @@ long disp_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 //		ret = bsp_disp_print_reg(1, ubuffer[0], 0);
 //		break;
 
+	case DISP_CMD_LCD_PARA:
+		lcd_para = ubuffer[0];
+		reinit_lcd0();
+		break;
+
 	default:
 		ret = disp_ioctl_extend(cmd, (unsigned long)ubuffer);
 		break;
@@ -1684,8 +1694,12 @@ extern void  capture_module_exit(void);
 int __init disp_module_init(void)
 {
 	int ret = 0, err;
+	char primary_key[25];
 
 	pr_info("[DISP]disp_module_init\n");
+
+	sprintf(primary_key, "disp_init");
+	ret = OSAL_Script_FetchParser_Data(primary_key, "disp_switch_enable", &disp_switch_enable, 1);
 
 	alloc_chrdev_region(&devid, 0, 1, "disp");
 	my_cdev = cdev_alloc();

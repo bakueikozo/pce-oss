@@ -176,94 +176,9 @@ static struct platform_device sunxi_pmu_dev = {
 	.resource = &sunxi_pmu_res,
 };
 #endif
-#if defined(CONFIG_KEYBOARD_GPIO)
+#if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_POLLED)
 /* Labels according to the SmartQ manual */
 static struct gpio_keys_button gpio_buttons[30];
-#if 0
-static struct gpio_keys_button gpio_buttons[] = {
-	{
-		.gpio			= GPIOG(0),
-		.code			= KEY_UP,
-		.desc			= "Up",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-	{
-		.gpio			= GPIOG(1),
-		.code			= KEY_LEFT,
-		.desc			= "Left",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-	{
-		.gpio			= GPIOG(2),
-		.code			= KEY_DOWN,
-		.desc			= "Down",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-	{
-		.gpio			= GPIOG(3),
-		.code			= KEY_RIGHT,
-		.desc			= "Right",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-	{
-		.gpio			= GPIOG(4),
-		.code			= BTN_SELECT,
-		.desc			= "Select",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-	{
-		.gpio			= GPIOG(5),
-		.code			= KEY_ENTER,
-		.desc			= "Start",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-	{
-		.gpio			= GPIOG(6),
-		.code			= KEY_S,
-		.desc			= "densya_D",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-	{
-		.gpio			= GPIOG(7),
-		.code			= KEY_A,
-		.desc			= "densya_A",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-	{
-		.gpio			= GPIOG(8),
-		.code			= KEY_Z,
-		.desc			= "densya_B",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-	{
-		.gpio			= GPIOG(9),
-		.code			= KEY_X,
-		.desc			= "densya_C",
-		.active_low		= 1,
-		.debounce_interval	= 5,
-		.type           = EV_KEY,
-	},
-
-};
-#endif
 
 static struct gpio_keys_platform_data gpio_buttons_data  = {
 	.buttons	= gpio_buttons,
@@ -272,7 +187,11 @@ static struct gpio_keys_platform_data gpio_buttons_data  = {
 };
 
 static struct platform_device gpio_buttons_device  = {
+#if defined(CONFIG_KEYBOARD_GPIO)
 	.name		= "gpio-keys",
+#elif defined(CONFIG_KEYBOARD_GPIO_POLLED)
+	.name		= "gpio-keys-polled",
+#endif
 	.id		= 0,
 	.num_resources	= 0,
 	.dev		= {
@@ -280,6 +199,7 @@ static struct platform_device gpio_buttons_device  = {
 	}
 };
 #endif
+#endif // defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_POLLED)
 
 static struct platform_device *sunxi_dev[] __initdata = {
 #if defined(CONFIG_SERIAL_8250) || defined(CONFIG_SERIAL_8250_MODULE)
@@ -288,11 +208,10 @@ static struct platform_device *sunxi_dev[] __initdata = {
 #if defined(CONFIG_CPU_HAS_PMU)
 	&sunxi_pmu_dev,
 #endif
-#if defined(CONFIG_KEYBOARD_GPIO)
+#if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_POLLED)
 	&gpio_buttons_device,
 #endif
 };
-#endif
 
 static void sun8i_restart(char mode, const char *cmd)
 {
@@ -439,8 +358,7 @@ static void __init sunxi_dev_init(void)
 {
 	script_item_value_type_e type;
 	script_item_u val;
-	//int key_cnt = 0;
-	char key_io[16], key_code[16];
+	char buf[25];
 	int i;
 
 	type = script_get_item("gpiokey_para", "key_cnt", &val);
@@ -449,36 +367,56 @@ static void __init sunxi_dev_init(void)
 		return;
 	}
 
+
+#if defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_POLLED)
 	gpio_buttons_data.nbuttons = val.val;
 	printk("%s %d gpio_buttons_data.nbuttons=%d \n", __func__, __LINE__, gpio_buttons_data.nbuttons);
+
+	type = script_get_item("gpiokey_para", "poll_interval", &val);
+	if(SCIRPT_ITEM_VALUE_TYPE_INT != type){
+		pr_err("%s: get poll_interval err! \n", __func__);
+		return;
+	}
+	gpio_buttons_data.poll_interval = val.val;
+	printk("%s %d gpio_buttons_data.poll_interval=%d \n", __func__, __LINE__, gpio_buttons_data.poll_interval);
+
 	for(i=0; i<gpio_buttons_data.nbuttons; i++){
-#if 1
-		sprintf(key_io, "key%d_io", i);
-		type = script_get_item("gpiokey_para", key_io, &val);
+		sprintf(buf, "key%d_io", i);
+		type = script_get_item("gpiokey_para", buf, &val);
 		if(SCIRPT_ITEM_VALUE_TYPE_PIO != type){
-			pr_err("%s: get %s err! \n", __func__, key_io);
+			pr_err("%s: get %s err! \n", __func__, buf);
 			return;
 		}
 
 		gpio_buttons[i].gpio = val.gpio.gpio;
 
-		sprintf(key_code, "key%d_code", i);
-		type = script_get_item("gpiokey_para", key_code, &val);
+		sprintf(buf, "key%d_code", i);
+		type = script_get_item("gpiokey_para", buf, &val);
 		if(SCIRPT_ITEM_VALUE_TYPE_INT != type){
-			pr_err("%s: get %s err! \n", __func__, key_code);
+			pr_err("%s: get %s err! \n", __func__, buf);
 			return;
 		}
 
 		gpio_buttons[i].code = val.val;
-		
+
+		sprintf(buf, "key%d_debounce_interval", i);
+		type = script_get_item("gpiokey_para", buf, &val);
+		if(SCIRPT_ITEM_VALUE_TYPE_INT != type){
+			pr_err("%s: get %s err! \n", __func__, buf);
+			return;
+		}
+
+		gpio_buttons[i].debounce_interval = val.val;
+
 		gpio_buttons[i].active_low = 1;
-		gpio_buttons[i].debounce_interval = 5;
 		gpio_buttons[i].type = EV_KEY;
 
-#endif		
-		printk("%s %d gpio_buttons[i].gpio=%d gpio_buttons[i].code=%d \n", __func__, __LINE__, gpio_buttons[i].gpio, gpio_buttons[i].code);
+		printk("%s %d gpio_buttons[i].gpio=%d gpio_buttons[i].code=%d gpio_buttons[i].debounce_interval=%d\n", __func__, __LINE__, gpio_buttons[i].gpio, gpio_buttons[i].code, gpio_buttons[i].debounce_interval);
 	
 	}
+
+#endif // defined(CONFIG_KEYBOARD_GPIO) || defined(CONFIG_KEYBOARD_GPIO_POLLED)
+
 #ifdef CONFIG_OF
 	of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
 #else

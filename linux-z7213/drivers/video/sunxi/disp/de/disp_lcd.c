@@ -1,5 +1,9 @@
 #include "disp_lcd.h"
 
+/* for switching LCD display feature */
+extern disp_switch_enable;
+extern lcd_para;
+
 struct disp_lcd_private_data
 {
 	disp_lcd_flow             open_flow;
@@ -30,6 +34,11 @@ struct disp_lcd_private_data
 	disp_clk_info_t           extra_clk;
 	disp_clk_info_t           merge_clk;
 	disp_clk_info_t           sat_clk;
+
+	/*0:no reset process;1:reset request;2:resetting*/
+	atomic_t lcd_resetting;
+	struct work_struct reflush_work;
+	struct disp_lcd_esd_info esd_inf;
 };
 #if defined(__LINUX_PLAT__)
 static spinlock_t lcd_data_lock;
@@ -89,8 +98,6 @@ s32 lcd_parse_panel_para(u32 screen_id, disp_panel_para * info)
 
     if(value == 0) //no need to get panel para if !lcd_used
         return -1;
-
-    sprintf(primary_key, "lcd%d_para", screen_id);
 
     memset(info, 0, sizeof(disp_panel_para));
 
@@ -889,7 +896,11 @@ s32 disp_lcd_get_driver_name(struct disp_lcd *lcd, char* name)
 		return DIS_FAIL;
 	}
 
-	sprintf(primary_key, "lcd%d_para", lcd->channel_id);
+	if ( disp_switch_enable ) {
+		sprintf(primary_key, "lcd%d_para", lcd_para);
+	 } else {
+		sprintf(primary_key, "lcd%d_para", lcd->channel_id);
+	}
 
 	ret = OSAL_Script_FetchParser_Data(primary_key, "lcd_driver_name",  (int*)name, 2);
 	printk("disp_lcd_get_driver_name, %s\n", name);
@@ -1025,8 +1036,7 @@ static s32 lcd_clk_config(struct disp_lcd* lcd)
 			lcdp->lcd_clk.clk_div2 = 1;
 #endif
 
-	printk("%s111 ======lcd ddddclk = %u\n", __func__, lcdp->panel_info.lcd_dclk_freq);
-#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EXTERNAL_HDMI)
+#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EP952)
 	lcd_dclk_freq = lcdp->panel_info.lcd_dclk_freq;
 #else
 	lcd_dclk_freq = lcdp->panel_info.lcd_dclk_freq * 1000000;
@@ -1034,7 +1044,7 @@ static s32 lcd_clk_config(struct disp_lcd* lcd)
 	printk("%s222 ======lcd ddddclk = %u\n", __func__, lcd_dclk_freq);
 	if ((lcdp->panel_info.lcd_if == LCD_IF_HV) || (lcdp->panel_info.lcd_if == LCD_IF_CPU)
 	    || (lcdp->panel_info.lcd_if == LCD_IF_EDP))	{
-#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EXTERNAL_HDMI)
+#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EP952)
 		if (lcd_dclk_freq < 74250000) {
 			lcdp->lcd_clk.clk_div = 6;
 			lcdp->lcd_clk.clk_div2 = 1;
@@ -1232,7 +1242,7 @@ s32 lcd_clk_disable(struct disp_lcd* lcd)
 	return	DIS_SUCCESS;
 }
 
-extern s32 ep952_get_video_timing_info(disp_video_timing **video_info);
+//extern s32 ep952_get_video_timing_info(disp_video_timing **video_info);
 s32 disp_lcd_get_hdmi_mode(struct disp_lcd *lcd)
 {
 	u32 channel_id;
@@ -1269,7 +1279,7 @@ s32 disp_lcd_get_hdmi_mode_support(struct disp_lcd *lcd, disp_tv_mode tv_mode)
 	return ret;
 }
 
-extern s32 ep952_set_mode(disp_tv_mode hdmi_mode);
+//extern s32 ep952_set_mode(disp_tv_mode hdmi_mode);
 
 s32 disp_lcd_set_hdmi_mode(struct disp_lcd *lcd, disp_tv_mode tv_mode)
 {
@@ -1283,15 +1293,20 @@ s32 disp_lcd_set_hdmi_mode(struct disp_lcd *lcd, disp_tv_mode tv_mode)
 		DE_WRN("NULL hdl!\n");
 		return DIS_FAIL;
 	}
-	ep952_set_mode(tv_mode);
+
+	if(lcdp->lcd_panel_fun.lcd_user_defined_func) {
+		lcdp->lcd_panel_fun.lcd_user_defined_func(channel_id, 1, tv_mode, 0);
+		lcdp->lcd_panel_fun.lcd_user_defined_func(channel_id, 4, 0, &t);
+	}
+
+	//ep952_set_mode(tv_mode);
 	channel_id = lcd->channel_id;
-	ep952_get_video_timing_info(&t);
-	if (t)
+//	ep952_get_video_timing_info(&t);
+	if (t) {
 		memcpy(&timing, t, sizeof(disp_video_timing));
-	else
+	}else
 		printk("get hdmi timing failed.\n");
 
-	printk("%s...pixel_clk = %u", __func__, timing.pixel_clk);
 	info = &(lcdp->panel_info);
 	info->lcd_if = 0;
 	info->lcd_x = timing.x_res;
@@ -1306,9 +1321,9 @@ s32 disp_lcd_set_hdmi_mode(struct disp_lcd *lcd, disp_tv_mode tv_mode)
 	//info->lcd_hv_syuv_seq = LCD_HV_SYUV_SEQ_UYUV;
 	lcdp->panel_info.lcd_hspw = timing.hor_sync_time;
 	lcdp->panel_info.lcd_vspw = timing.ver_sync_time;
-	if(!lcdp->lcd_panel_fun.lcd_user_defined_func) {
-		lcdp->lcd_panel_fun.lcd_user_defined_func(channel_id, 1, tv_mode, 0);
-	}
+	//if(!lcdp->lcd_panel_fun.lcd_user_defined_func) {
+	//	lcdp->lcd_panel_fun.lcd_user_defined_func(channel_id, 1, tv_mode, 0);
+	//}
 	return 0;
 }
 s32 disp_lcd_tcon_enable(struct disp_lcd *lcd)
@@ -1385,6 +1400,9 @@ s32 disp_lcd_set_panel_funs(struct disp_lcd* lcd, disp_lcd_panel_fun * lcd_cfg)
 	lcdp->lcd_panel_fun.cfg_open_flow = lcd_cfg->cfg_open_flow;
 	lcdp->lcd_panel_fun.cfg_close_flow = lcd_cfg->cfg_close_flow;
 	lcdp->lcd_panel_fun.lcd_user_defined_func = lcd_cfg->lcd_user_defined_func;
+	lcdp->lcd_panel_fun.esd_check = lcd_cfg->esd_check;
+	lcdp->lcd_panel_fun.reset_panel = lcd_cfg->reset_panel;
+	lcdp->lcd_panel_fun.set_esd_info = lcd_cfg->set_esd_info;
 #if 0
 	gdisp.lcd_registered = 1;
 	if(gdisp.init_para.start_process) {
@@ -1468,8 +1486,7 @@ s32 disp_lcd_pre_enable(struct disp_lcd* lcd)
 	struct disp_lcd_private_data *lcdp = disp_lcd_get_priv(lcd);
 	u32 data[2];
 
-
-	printk("%s: ====\n", __func__);
+	atomic_set(&lcdp->lcd_resetting, 2);
 	if((NULL == lcd) || (NULL == lcdp)) {
 		DE_WRN("NULL hdl!\n");
 		return -1;
@@ -1517,6 +1534,16 @@ s32 disp_lcd_pre_enable(struct disp_lcd* lcd)
 	}
 
 	need_enable_backlight = false;
+	if (lcdp->lcd_panel_fun.set_esd_info) {
+		lcdp->lcd_panel_fun.set_esd_info(&lcdp->esd_inf);
+	} else {
+		/*default value*/
+		lcdp->esd_inf.level = 0;
+		lcdp->esd_inf.freq = 60;
+		lcdp->esd_inf.esd_check_func_pos = 0;
+		lcdp->esd_inf.cnt = 0;
+	}
+	atomic_set(&lcdp->lcd_resetting, 0);
 	return 0;
 }
 
@@ -1559,6 +1586,9 @@ s32 disp_lcd_pre_disable(struct disp_lcd* lcd)
 		DE_WRN("NULL hdl!\n");
 		return DIS_FAIL;
 	}
+
+	lcdp->esd_inf.cnt = 0;
+	atomic_set(&lcdp->lcd_resetting, 2);
 #if defined(__LINUX_PLAT__)
   {
   	unsigned long flags;
@@ -1892,7 +1922,11 @@ s32 disp_lcd_set_bright(struct disp_lcd *lcd, u32 bright)
 		lcdp->lcd_cfg.backlight_dimming = (0 == lcdp->lcd_cfg.backlight_dimming)? 256:lcdp->lcd_cfg.backlight_dimming;
 		backlight_dimming = lcdp->lcd_cfg.backlight_dimming;
 		period_ns = lcdp->pwm_info.period_ns;
-		duty_ns = (backlight_bright * backlight_dimming *  period_ns/256 + 128) / 256;
+		if(lcdp->pwm_info.polarity == 0){
+			duty_ns = ((256 - backlight_bright) * backlight_dimming *  period_ns/256 + 128) / 256;
+		} else {
+			duty_ns = (backlight_bright * backlight_dimming *  period_ns/256 + 128) / 256;
+		}
 		lcdp->pwm_info.duty_ns = duty_ns;
 #if 0
 		DE_DBG("[PWM]bright=%d, bright_modify=%d, backlight_dimming=%d, period_ns=%d, duty_ns=%d\n",
@@ -1992,7 +2026,7 @@ s32 disp_lcd_get_timing(struct disp_lcd *lcd, disp_video_timing * tt)
 		return DIS_FAIL;
 	}
 
-#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EXTERNAL_HDMI)
+#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EP952)
 	lcd_dclk_freq = lcdp->panel_info.lcd_dclk_freq;
 #else
 	lcd_dclk_freq = lcdp->panel_info.lcd_dclk_freq * 1000000;
@@ -2041,6 +2075,22 @@ s32 disp_lcd_event_proc(void *parg)
 
 	if(tcon_irq_query(screen_id,LCD_IRQ_TCON0_VBLK) || tcon_irq_query(screen_id,LCD_IRQ_TCON1_VBLK)
 	    || tcon_irq_query(screen_id,LCD_IRQ_TCON0_CNTR) || dsi_irq_query(screen_id,DSI_IRQ_VIDEO_VBLK)) {
+		int cur_line = disp_al_lcd_get_cur_line(screen_id);
+		lcd = disp_get_lcd(screen_id);
+		if(lcd) {
+			lcdp = disp_lcd_get_priv(lcd);
+			if (lcdp->lcd_panel_fun.esd_check && lcdp->lcd_panel_fun.reset_panel) {
+				++lcdp->esd_inf.cnt;
+				if(cur_line < 2 && !atomic_read(&lcdp->lcd_resetting) && lcdp->esd_inf.cnt >= lcdp->esd_inf.freq) {
+					if (!lcdp->esd_inf.esd_check_func_pos || lcdp->lcd_panel_fun.esd_check(screen_id)) {
+						/*request reset*/
+						atomic_set(&lcdp->lcd_resetting, 1);
+						schedule_work(&lcdp->reflush_work);
+					}
+					lcdp->esd_inf.cnt = 0;
+				}
+			}
+		}
 		sync_event_proc(screen_id);
 	}
 
@@ -2245,9 +2295,14 @@ s32 disp_lcd_init(struct disp_lcd* lcd)
 		DE_WRN("NULL hdl!\n");
 		return DIS_FAIL;
 	}
-
-	lcd_get_sys_config(lcd->channel_id, &lcdp->lcd_cfg);
-	lcd_parse_panel_para(lcd->channel_id, &lcdp->panel_info);
+	
+	if ( disp_switch_enable ) {
+		lcd_get_sys_config(lcd_para, &lcdp->lcd_cfg);
+		lcd_parse_panel_para(lcd_para, &lcdp->panel_info);
+	} else {
+		lcd_get_sys_config(lcd->channel_id, &lcdp->lcd_cfg);
+		lcd_parse_panel_para(lcd->channel_id, &lcdp->panel_info);
+	}
 
 	/* register one notifier for all lcd */
 	if(0 == lcd->channel_id) {
@@ -2311,8 +2366,12 @@ s32 disp_lcd_init(struct disp_lcd* lcd)
 		}
 
 		backlight_bright = lcdp->lcd_cfg.backlight_bright;
+		if(lcdp->pwm_info.polarity == 0){
+			duty_ns = ((256 - backlight_bright) * period_ns) / 256;
+		} else {
+			duty_ns = (backlight_bright * period_ns) / 256;
+		}
 
-		duty_ns = (backlight_bright * period_ns) / 256;
 		DE_DBG("[PWM]backlight_bright=%d,period_ns=%d,duty_ns=%d\n",(u32)backlight_bright,(u32)period_ns, (u32)duty_ns);
 		OSAL_Pwm_Set_Polarity(lcdp->pwm_info.dev, lcdp->pwm_info.polarity);
 		OSAL_Pwm_Config(lcdp->pwm_info.dev, duty_ns, period_ns);
@@ -2355,6 +2414,100 @@ s32 disp_lcd_exit(struct disp_lcd* lcd)
 	lcd_clk_exit(lcd);
 
 	return 0;
+}
+
+static s32 disp_lcd_get_esd_info(struct disp_device *dispdev,
+		struct disp_lcd_esd_info *p_esd_info)
+{
+	s32 ret = -1;
+	struct disp_lcd_private_data *lcdp = NULL;
+	
+	if (!dispdev || !p_esd_info)
+		goto OUT;
+	lcdp = disp_lcd_get_priv(dispdev);
+	if (!lcdp)
+		goto OUT;
+
+	memcpy(p_esd_info, &lcdp->esd_inf, sizeof(struct disp_lcd_esd_info));
+	ret = 0;
+
+OUT:
+	return ret;
+}
+
+static void disp_lcd_reflush_work(struct work_struct *work)
+{
+	struct disp_lcd_private_data *lcdp =
+		container_of(work, struct disp_lcd_private_data, reflush_work);
+	struct disp_lcd *lcd = disp_get_lcd(0);
+	unsigned long flags;
+
+	if (!lcdp || !lcd) {
+		DE_WRN("lcdp is null\n");
+		return;
+	}
+
+	/*lcd is not enabled or is enabling*/
+	if (disp_lcd_is_enabled(lcd) == 0 || lcdp->enabling == 1)
+		return;
+
+	/*lcd is resetting*/
+	if (atomic_read(&lcdp->lcd_resetting) == 2)
+		return;
+
+	if (!lcdp->esd_inf.esd_check_func_pos)
+		if (lcdp->lcd_panel_fun.esd_check)
+			if (!lcdp->lcd_panel_fun.esd_check(lcd->channel_id)) {
+				atomic_set(&lcdp->lcd_resetting, 0);
+				return; /*everything is just fine*/
+			}
+
+	if (lcdp->esd_inf.level == 1) {
+		spin_lock_irqsave(&lcd_data_lock, flags);
+		lcdp->enabled = 0;
+		lcdp->enabling = 1;
+		spin_unlock_irqrestore(&lcd_data_lock, flags);
+
+		atomic_set(&lcdp->lcd_resetting, 2);
+
+		disp_lcd_tcon_disable(lcd);
+		disp_al_lcd_cfg(lcd->channel_id, &lcdp->panel_info);
+	} else
+		atomic_set(&lcdp->lcd_resetting, 2);
+
+	++lcdp->esd_inf.rst_cnt;
+	if (lcdp->lcd_panel_fun.reset_panel)
+		lcdp->lcd_panel_fun.reset_panel(lcd->channel_id);
+
+	if (lcdp->esd_inf.level == 1) {
+		disp_lcd_tcon_enable(lcd);
+		spin_lock_irqsave(&lcd_data_lock, flags);
+		lcdp->enabled = 1;
+		lcdp->enabling = 0;
+		spin_unlock_irqrestore(&lcd_data_lock, flags);
+	}
+
+	bsp_disp_delay_ms(300);
+
+	/*lcd reset finish*/
+	atomic_set(&lcdp->lcd_resetting, 0);
+}
+
+/* for switching LCD display feature */
+void reinit_lcd0(void)
+{
+	struct disp_lcd *lcd;
+	struct disp_lcd_private_data *lcdp;
+	lcd = disp_get_lcd(0);
+
+	/* set bright to 0 before switching LCD */
+	disp_lcd_set_bright(lcd, 0);
+
+	/* release pwm before switching LCD*/
+	lcdp = disp_lcd_get_priv(lcd);
+	OSAL_Pwm_free(lcdp->pwm_info.dev);
+
+	lcd->init(lcd);
 }
 
 s32 disp_init_lcd(__disp_bsp_init_para * para)
@@ -2487,7 +2640,7 @@ s32 disp_init_lcd(__disp_bsp_init_para * para)
 		lcd->get_open_flow = disp_lcd_get_open_flow;
 		lcd->get_close_flow  = disp_lcd_get_close_flow;
 		lcd->pre_enable = disp_lcd_pre_enable;
-		lcd->post_enable = disp_lcd_post_enable;;
+		lcd->post_enable = disp_lcd_post_enable;
 		lcd->pre_disable = disp_lcd_pre_disable;
 		lcd->post_disable  = disp_lcd_post_disable;
 		lcd->tcon_enable = disp_lcd_tcon_enable;
@@ -2501,12 +2654,18 @@ s32 disp_init_lcd(__disp_bsp_init_para * para)
 		lcd->gpio_set_direction = disp_lcd_gpio_set_direction;
 		lcd->gpio_set_value = disp_lcd_gpio_set_value;
 		lcd->get_panel_info = disp_lcd_get_panel_info;
-#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EXTERNAL_HDMI)
+		//TODO:CONFIG_EXTERNAL_HDMI
+#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_EP952)
 		lcd->get_hdmi_ep952_mode = disp_lcd_get_hdmi_mode;
 		lcd->set_hdmi_ep952_mode = disp_lcd_set_hdmi_mode;
 		lcd->get_hdmi_ep952_mode_support = disp_lcd_get_hdmi_mode_support;
 #endif
+		lcd->get_esd_info = disp_lcd_get_esd_info;
+
 		lcd->init(lcd);
+
+		INIT_WORK(&lcdp->reflush_work, disp_lcd_reflush_work);
+		atomic_set(&lcdp->lcd_resetting, 0);
 	}
 
 	return 0;

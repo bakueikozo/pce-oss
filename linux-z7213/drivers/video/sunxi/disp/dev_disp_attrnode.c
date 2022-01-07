@@ -16,6 +16,47 @@ u32 fastboot;
 
 #define ____SEPARATOR_GLABOL_NODE____
 
+/* for switching LCD display feature */
+extern disp_switch_enable;
+extern lcd_para;
+extern void reinit_lcd0(void);
+
+static ssize_t disp_lcd_para_show(struct device *dev,
+    struct device_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", lcd_para);
+}
+static ssize_t disp_lcd_para_store(struct device *dev,
+        struct device_attribute *attr,
+        const char *buf, size_t count)
+{
+	int err;
+	unsigned long val;
+
+	if ( 0 == disp_switch_enable ) {
+		printk("[disp_init] disp_switch_enable not enabled!\n");
+		return count;
+	}
+
+	err = strict_strtoul(buf, 10, &val);
+	if (err) {
+		printk("Invalid size\n");
+		return err;
+	}
+    if((val>1))
+    {
+        printk("Invalid value, 0/1 is expected!\n");
+    }else
+    {
+        printk("%ld\n", val);
+        lcd_para = val;
+  }
+  reinit_lcd0();
+  return count;
+}
+static DEVICE_ATTR(lcd_para, S_IRUGO|S_IWUSR|S_IWGRP,
+    disp_lcd_para_show, disp_lcd_para_store);
+
 static ssize_t disp_sel_show(struct device *dev,
     struct device_attribute *attr, char *buf)
 {
@@ -446,6 +487,7 @@ static DEVICE_ATTR(lcdbl, S_IRUGO|S_IWUSR|S_IWGRP,
     disp_lcdbl_show, disp_lcdbl_store);
 
 static struct attribute *disp_attributes[] = {
+	&dev_attr_lcd_para.attr,
     &dev_attr_sel.attr,
 	&dev_attr_fastboot.attr,
     &dev_attr_hid.attr,

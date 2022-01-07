@@ -82,6 +82,7 @@ __hdle OSAL_GPIO_Request(disp_gpio_set_t *gpio_list, u32 group_count_max)
 
 	return ret;
 }
+EXPORT_SYMBOL(OSAL_GPIO_Request);
 
 __hdle OSAL_GPIO_Request_Ex(char *main_name, const char *sub_name)
 {
@@ -101,6 +102,7 @@ s32 OSAL_GPIO_Release(__hdle p_handler, s32 if_release_to_default_status)
 	}
 	return 0;
 }
+EXPORT_SYMBOL(OSAL_GPIO_Release);
 
 s32 OSAL_GPIO_DevGetAllPins_Status(unsigned p_handler, disp_gpio_set_t *gpio_status, unsigned gpio_count_max, unsigned if_get_from_hardware)
 {

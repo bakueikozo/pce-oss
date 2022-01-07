@@ -28,6 +28,7 @@ exit1:
 exit:
 	return ret;
 }
+EXPORT_SYMBOL(OSAL_Power_Enable);
 
 int OSAL_Power_Disable(char *name)
 {
@@ -54,6 +55,7 @@ exit1:
 exit:
 	return ret;
 }
+EXPORT_SYMBOL(OSAL_Power_Disable);
 
 #else
 

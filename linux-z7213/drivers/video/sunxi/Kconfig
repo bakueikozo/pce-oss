@@ -19,6 +19,18 @@ config FB_CONSOLE_SUNXI
   default n
   ---help---
 
+config EXTERNAL_HDMI
+  tristate "external hdmi(ep952) driver for SUNXI"
+  depends on (ARCH_SUN8IW5P1 && FB_SUNXI)
+  default m
+  ---help---
+
+config SUNXI_FB_DRAW_BOOTLOGO
+  bool "draw bootlogo on fb while boot"
+  depends on (ARCH_SUN8IW5P1 && FB_SUNXI)
+  default n
+  ---help---
+
 config LCD_SUNXI
   tristate "LCD Driver Support(sunxi)"
   depends on ((ARCH_SUN9IW1P1 || ARCH_SUN8IW5P1 || ARCH_SUN8IW3P1) && FB_SUNXI)

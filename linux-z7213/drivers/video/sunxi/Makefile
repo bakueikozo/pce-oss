@@ -4,9 +4,9 @@
 
 
 obj-$(CONFIG_FB_SUNXI)     += disp/
+obj-$(CONFIG_EXTERNAL_HDMI) += hdmi_ep952/
 obj-$(CONFIG_LCD_SUNXI)    += lcd/
 obj-$(CONFIG_HDMI_SUNXI)   += hdmi/
-obj-y += hdmi_ep952/
 
 obj-$(CONFIG_FB_SUNXI_LEGACY)     += legacy/disp/
 obj-$(CONFIG_LCD_SUNXI_LEGACY)    += legacy/lcd/

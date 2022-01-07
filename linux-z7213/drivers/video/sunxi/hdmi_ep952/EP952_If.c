@@ -384,8 +384,8 @@ void HDMI_Tx_AMute_Disable(void)
 	EP952_Reg_Clear_Bit(EP952_Color_Space_Control, EP952_Color_Space_Control__AVMUTE);
 	EP952_Reg_Clear_Bit(EP952_Color_Space_Control, EP952_Color_Space_Control__AMUTE);
 
-	EP952_Reg_Set_Bit(EP952_IIS_Control, EP952_IIS_Control__ADO_EN);
 	EP952_Reg_Set_Bit(EP952_IIS_Control, EP952_IIS_Control__AUDIO_EN);
+	EP952_Reg_Set_Bit(EP952_IIS_Control, EP952_IIS_Control__ADO_EN);
 
 	DBG("< EP952 Audio_Mute_disable >\n");
 }

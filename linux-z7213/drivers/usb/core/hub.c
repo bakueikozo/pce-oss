@@ -38,7 +38,6 @@
 #endif
 #endif
 
-#define USED_MA8601
 struct usb_hub {
 	struct device		*intfdev;	/* the "interface" device */
 	struct usb_device	*hdev;
@@ -87,6 +86,7 @@ struct usb_hub {
 };
 
 #ifdef CONFIG_USB_SPECIAL_DEVICE
+#include <mach/sys_config.h>
 #define SPECIAL_USB_DEVICE(ven, prod) \
 	.idVendor = (ven), \
 	.idProduct = (prod)
@@ -96,16 +96,74 @@ struct device_id {
 	__le16 idProduct;
 };
 
-static const struct device_id special_id_list[] = {
-	{ SPECIAL_USB_DEVICE(0x14cd, 0x8601) },
-	{ SPECIAL_USB_DEVICE(0x0F0D, 0x138) },
-	{ SPECIAL_USB_DEVICE(0x0F0D, 0xC1) },
-	{ SPECIAL_USB_DEVICE(0x0F0D, 0xAA) },
-	{ SPECIAL_USB_DEVICE(0x0F0D, 0xF1) },
-	{ SPECIAL_USB_DEVICE(0x0F0D, 0x139) },
-	{ SPECIAL_USB_DEVICE(0x0F0D, 0xEE) },
-	{}
-};
+static struct device_id *special_id_list;
+
+static s32 set_special_id_list()
+{
+	int i;
+	char name[16] = {0};
+	script_item_u val;
+	script_item_value_type_e type;
+	int device_count;
+	struct device_id dev_id;
+
+	type = script_get_item("usb_special_device", "device_count", &val);
+	if (SCIRPT_ITEM_VALUE_TYPE_INT != type) {
+		return -ENODEV;
+	}
+	device_count = val.val;
+
+	special_id_list=(struct device_id *) kmalloc(sizeof(struct device_id) * device_count, GFP_ATOMIC);
+	if (NULL == special_id_list)
+	{
+		return -ENOMEM;
+	}
+
+	for (i = 0; i <= device_count; i++) {
+		sprintf(name, "device%d_vid", i);
+		type = script_get_item("usb_special_device", name, &val);
+		if (SCIRPT_ITEM_VALUE_TYPE_INT != type) {
+			return -ENODEV;
+		}
+		dev_id.idVendor = val.val;
+
+		sprintf(name, "device%d_pid", i);
+		type = script_get_item("usb_special_device", name, &val);
+		if (SCIRPT_ITEM_VALUE_TYPE_INT != type) {
+			return -ENODEV;
+		}
+		dev_id.idProduct = val.val;
+
+		*(special_id_list + i) = dev_id;
+	}
+
+	return 0;
+}
+
+static int special_match_id(struct usb_device *udev,
+		const struct device_id *id)
+{
+	script_item_u val;
+	script_item_value_type_e type;
+	int device_count;
+
+	type = script_get_item("usb_special_device", "device_count", &val);
+	if (SCIRPT_ITEM_VALUE_TYPE_INT != type) {
+		return -ENODEV;
+	}
+	device_count = val.val;
+
+	while (device_count > 0) {
+		if ((udev->descriptor.idVendor == id->idVendor) && (udev->descriptor.idProduct == id->idProduct)) {
+			return 0;
+		}
+		device_count--;
+		id++;
+	}
+
+	return 1;
+}
+
 #endif
 
 static inline int hub_is_superspeed(struct usb_device *hdev)
@@ -181,19 +239,6 @@ EXPORT_SYMBOL_GPL(ehci_cf_port_reset_rwsem);
 
 static void hub_release(struct kref *kref);
 static int usb_reset_and_verify_device(struct usb_device *udev);
-
-#ifdef CONFIG_USB_SPECIAL_DEVICE
-static int special_match_id(struct usb_device *udev,
-		const struct device_id *id)
-{
-	for (; id->idVendor; id++) {
-		if ((udev->descriptor.idVendor == id->idVendor) && (udev->descriptor.idProduct == id->idProduct))
-			return 0;
-	}
-
-	return 1;
-}
-#endif
 
 static inline char *portspeed(struct usb_hub *hub, int portstatus)
 {
@@ -3481,10 +3526,7 @@ static void hub_port_connect_change(struct usb_hub *hub, int port1,
 			le16_to_cpu(hub->descriptor->wHubCharacteristics);
 	struct usb_device *udev;
 	int status, i;
-	int count=0;
-	int retry_count = 3;
 
-retry:
 	dev_dbg (hub_dev,
 		"port %d, status %04x, change %04x, %s\n",
 		port1, portstatus, portchange, portspeed(hub, portstatus));
@@ -3699,13 +3741,6 @@ loop:
 				port1);
  
 done:
-#ifdef USED_MA8601
-	hub_port_status(hub, port1,&portstatus, &portchange);
-	if(count < retry_count) {
-		count++;
-		goto retry;
-	}
-#endif
 	hub_port_disable(hub, port1, 1);
 	if (hcd->driver->relinquish_port && !hub->hdev->parent)
 		hcd->driver->relinquish_port(hcd, port1);
@@ -4055,6 +4090,9 @@ static struct usb_driver hub_driver = {
 
 int usb_hub_init(void)
 {
+#ifdef CONFIG_USB_SPECIAL_DEVICE
+	set_special_id_list();
+#endif
 	if (usb_register(&hub_driver) < 0) {
 		printk(KERN_ERR "%s: can't register hub driver\n",
 			usbcore_name);

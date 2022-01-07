@@ -98,3 +98,9 @@ bImage
 rootfs.cpio.gz
 drivers/arisc/binary/arisc
 drivers/block/nand/sun8iw5p1/libnand_sun8iw5p1
+
+# for yocto recipes-kernel build
+arch/arm/boot/vmlinux
+oe-logs
+oe-workdir
+source

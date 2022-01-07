@@ -602,12 +602,28 @@ typedef struct lcd_flow
 	unsigned int cur_step;
 }disp_lcd_flow;
 
+struct disp_lcd_esd_info {
+	/*1:reset all module include tcon; 0:reset panel only*/
+	unsigned char level;
+	/*unit:frame*/
+	unsigned short freq;
+	/*1:in disp isr; 0:in reflush work*/
+	unsigned char esd_check_func_pos;
+	/*count*/
+	unsigned int cnt;
+	/*reset count*/
+	unsigned int rst_cnt;
+};
+
 typedef struct
 {
 	void (*cfg_panel_info)(panel_extend_para * info);
 	int (*cfg_open_flow)(unsigned int sel);
 	int (*cfg_close_flow)(unsigned int sel);
-	int (*lcd_user_defined_func)(unsigned int sel, unsigned int para1, unsigned int para2, unsigned int para3);
+	int (*lcd_user_defined_func)(unsigned int sel, unsigned int para1, unsigned int para2, disp_video_timing** para3);
+	int (*esd_check)(unsigned int sel);
+	int (*reset_panel)(unsigned int sel);
+	int (*set_esd_info)(struct disp_lcd_esd_info *p_info);
 }disp_lcd_panel_fun;
 
 struct sunxi_disp_source_ops
@@ -807,11 +823,15 @@ typedef enum tag_DISP_CMD
 	DISP_CMD_MEM_SELIDX = 0x2c3,
 
 	DISP_CMD_PRINT_REG = 0x2e0,
+
+	//---astro lcd switch ---
+	DISP_CMD_LCD_PARA = 0x304,
 }__disp_cmd_t;
 
+#define LCD_PANEL_RELOAD_FUNCS 0x305
 #define FBIOGET_LAYER_HDL_0 0x4700
 #define FBIOGET_LAYER_HDL_1 0x4701
-
+#define SUPPORT_EP952
 #endif
 
 #endif

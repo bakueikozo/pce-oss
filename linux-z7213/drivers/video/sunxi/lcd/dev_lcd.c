@@ -42,6 +42,24 @@ int lcd_mmap(struct file *file, struct vm_area_struct * vma)
 
 long lcd_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
+	unsigned long karg[4];
+	unsigned long ubuffer[4] = {0};
+
+	if (copy_from_user((void*)karg,(void __user*)arg,4*sizeof(unsigned long))) {
+		__wrn("copy_from_user fail\n");
+		return -EFAULT;
+	}
+
+	ubuffer[0] = *(unsigned long*)karg;
+	ubuffer[1] = (*(unsigned long*)(karg+1));
+	ubuffer[2] = (*(unsigned long*)(karg+2));
+	ubuffer[3] = (*(unsigned long*)(karg+3));
+
+	switch(cmd)	{
+		case LCD_PANEL_RELOAD_FUNCS:
+			LCD_set_panel_funs();
+			break;
+	}
 	return 0;
 }
 
@@ -55,6 +73,15 @@ static const struct file_operations lcd_fops =
 	.unlocked_ioctl = lcd_ioctl,
 	.mmap           = lcd_mmap,
 };
+
+ssize_t reload_lcd_panel_function(struct device *dev, struct device_attribute *attr, const char *buf, size_t count)
+{
+    LCD_set_panel_funs();
+    return count;
+}
+
+static CLASS_ATTR(reload_lcd_panel_func, S_IRUGO|S_IWUGO,
+    NULL, reload_lcd_panel_function);
 
 int lcd_init(void)
 {
@@ -87,6 +114,9 @@ int __init lcd_module_init(void)
 	}
 
 	device_create(g_lcd_drv.lcd_class, NULL, g_lcd_drv.devid, NULL, "lcd");
+
+	/* for switching LCD display feature */
+	class_create_file(g_lcd_drv.lcd_class, &class_attr_reload_lcd_panel_func);
 
 	lcd_init();
 

@@ -1117,6 +1117,7 @@ int bsp_extern_hdmi_register()
 		gdisp.init_para.start_process();
 	}
 }
+EXPORT_SYMBOL(bsp_extern_hdmi_register);
 
 void LCD_OPEN_FUNC(u32 screen_id, LCD_FUNC func, u32 delay)
 {
@@ -1249,12 +1250,19 @@ s32 bsp_disp_get_lcd_output_type(u32 screen_id)
 }
 s32 bsp_disp_ep952_set_mode(u32 screen_id,  disp_tv_mode mode)
 {
+	char drv_name[32];
 	printk("%s: ====\n", __func__);
 	struct disp_lcd *lcd = disp_get_lcd(screen_id);
-	if(lcd && lcd->set_hdmi_ep952_mode) {
-		return lcd->set_hdmi_ep952_mode(lcd, mode);
+	if(lcd && (lcd->get_panel_driver_name) && (lcd->set_panel_func)) {
+		lcd->get_panel_driver_name(lcd, drv_name);
+		if(!strcmp("EP952", drv_name)) {
+			if(lcd && lcd->set_hdmi_ep952_mode) {
+				return lcd->set_hdmi_ep952_mode(lcd, mode);
+			}
+		}
 	}
-	return DIS_FAIL;
+
+	return DIS_SUCCESS;
 }
 s32 bsp_disp_ep952_get_mode(u32 screen_id)
 {

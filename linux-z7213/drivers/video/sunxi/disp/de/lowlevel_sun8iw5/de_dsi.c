@@ -176,6 +176,23 @@ __s32 dsi_close(__u32 sel)
 	return 0;
 }
 
+__s32 dsi_open_panel(__u32 sel)
+{
+	//dsi_irq_enable(sel,DSI_IRQ_VIDEO_VBLK);
+	dsi_dev[sel]->dsi_inst_jump_cfg[0].bits.jump_cfg_en = 0;
+	dsi_start(sel,DSI_START_HSTX);
+
+	return 0;
+}
+
+__s32 dsi_close_panel(__u32 sel)
+{
+	//dsi_irq_disable(sel,DSI_IRQ_VIDEO_VBLK);
+	dsi_dev[sel]->dsi_inst_jump_cfg[0].bits.jump_cfg_en = 1;
+	//bsp_disp_lcd_delay_ms(30);
+	return 0;
+}
+
 __s32 dsi_tri_start(__u32 sel)
 {
 	dsi_start(sel,DSI_START_HSTX);
@@ -1060,5 +1077,7 @@ EXPORT_SYMBOL(dsi_dcs_wr_3para);
 EXPORT_SYMBOL(dsi_dcs_wr_4para);
 EXPORT_SYMBOL(dsi_dcs_wr_5para);
 EXPORT_SYMBOL(dsi_dcs_rd);
+EXPORT_SYMBOL(dsi_close_panel);
+EXPORT_SYMBOL(dsi_open_panel);
 
 #endif
