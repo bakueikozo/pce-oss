@@ -742,7 +742,12 @@ static s32 lcd_clk_config(struct disp_lcd* lcd)
 		return -1;
 	}
 
+#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_DCLK_HZ)
+	lcd_dclk_freq = lcdp->panel_info.lcd_dclk_freq;
+#else
 	lcd_dclk_freq = lcdp->panel_info.lcd_dclk_freq * 1000000;
+#endif
+
 	if ((lcdp->panel_info.lcd_if == LCD_IF_HV) || (lcdp->panel_info.lcd_if == LCD_IF_CPU)
 	    || (lcdp->panel_info.lcd_if == LCD_IF_EDP))	{
 		lcdp->lcd_clk.clk_div = 6;//todo?
@@ -793,7 +798,12 @@ static s32 lcd_clk_config(struct disp_lcd* lcd)
 #else
 			lcdp->lcd_clk.clk_div2 = 1;
 #endif
+#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_DCLK_HZ)
+	lcd_dclk_freq = lcdp->panel_info.lcd_dclk_freq;
+#else
 	lcd_dclk_freq = lcdp->panel_info.lcd_dclk_freq * 1000000;
+#endif
+
 	if ((lcdp->panel_info.lcd_if == LCD_IF_HV) || (lcdp->panel_info.lcd_if == LCD_IF_CPU)
 	    || (lcdp->panel_info.lcd_if == LCD_IF_EDP))	{
 		lcdp->lcd_clk.clk_div = 6;
@@ -1407,7 +1417,11 @@ s32 disp_lcd_set_bright(struct disp_lcd *lcd, u32 bright)
 	lcdp->lcd_cfg.backlight_dimming = (0 == lcdp->lcd_cfg.backlight_dimming)? 256:lcdp->lcd_cfg.backlight_dimming;
 	backlight_dimming = lcdp->lcd_cfg.backlight_dimming;
 	period_ns = lcdp->pwm_info.period_ns;
-	duty_ns = (backlight_bright * backlight_dimming *  period_ns/256 + 128) / 256;
+	if(lcdp->panel_info.lcd_pwm_pol == 0){
+		duty_ns = ((256 - backlight_bright) * backlight_dimming *  period_ns/256 + 128) / 256;
+	}else{
+		duty_ns = (backlight_bright * backlight_dimming *  period_ns/256 + 128) / 256;
+	}
 	lcdp->pwm_info.duty_ns = duty_ns;
 
 //		DE_DBG("[PWM]bright=%d, bright_modify=%d, backlight_dimming=%d, period_ns=%d, duty_ns=%d\n",
@@ -1502,7 +1516,11 @@ s32 disp_lcd_get_timing(struct disp_lcd *lcd, disp_video_timing * tt)
 	}
 
 	memset(tt, 0, sizeof(disp_video_timing));
+#if defined(CONFIG_ARCH_SUN8IW5P1) && defined(SUPPORT_DCLK_HZ)
+	tt->pixel_clk = lcdp->panel_info.lcd_dclk_freq / 1000;
+#else
 	tt->pixel_clk = lcdp->panel_info.lcd_dclk_freq * 1000;
+#endif
 	tt->x_res = lcdp->panel_info.lcd_x;
 	tt->y_res = lcdp->panel_info.lcd_y;
 	tt->hor_total_time= lcdp->panel_info.lcd_ht;
@@ -1807,8 +1825,12 @@ s32 disp_lcd_init(struct disp_lcd* lcd)
 	}
 
 	backlight_bright = lcdp->lcd_cfg.backlight_bright;
-
-	duty_ns = (backlight_bright * period_ns) / 256;
+	
+	if(lcdp->panel_info.lcd_pwm_pol == 0){
+		duty_ns = ((256 - backlight_bright) * period_ns) / 256;
+	}else{
+		duty_ns = (backlight_bright * period_ns) / 256;
+	}
 //		DE_DBG("[PWM]backlight_bright=%d,period_ns=%d,duty_ns=%d\n",(u32)backlight_bright,(u32)period_ns, (u32)duty_ns);
 	sunxi_pwm_set_polarity(lcdp->pwm_info.channel, lcdp->pwm_info.polarity);
 	sunxi_pwm_config(lcdp->pwm_info.channel, duty_ns, period_ns);

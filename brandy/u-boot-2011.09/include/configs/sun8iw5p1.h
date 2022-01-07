@@ -60,9 +60,9 @@
 #define SUNXI_SID_VBASE                 (0x01c23800)       
 
 #define CONFIG_ARCH_R16
-//#define CONFIG_CHIP_VERIFY
+#define CONFIG_CHIP_VERIFY
 //#define FORCE_BOOT_STANDBY
-#define USE_SW2001 
+//#define USE_SW2001 
 #define CONFIG_NO_BOOT_STANDBY
 #undef FORCE_BOOT_STANDBY
 #define CONFIG_SYS_SDRAM_BASE		     (0x40000000)
@@ -354,4 +354,5 @@
 #define CONFIG_CMD_RUN			/* run a command */
 #define CONFIG_CMD_BOOTD		/* boot the default command */
 
+#define SUPPORT_DCLK_HZ
 #endif /* __CONFIG_H */

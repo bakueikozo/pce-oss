@@ -20,7 +20,7 @@
 #ifndef __PWM_H__
 #define __PWM_H__
 
-#define PWM_NUM 2
-#define PWM_REG_NUM 3
+#define PWM_NUM 3
+#define PWM_REG_NUM 5
 
 #endif

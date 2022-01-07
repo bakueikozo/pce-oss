@@ -913,18 +913,18 @@ void board_init_r(gd_t *id, ulong dest_addr)
 			printf("board_status_probe\n");
 			board_status_probe(0);
 #endif
-#if 0
+
                     if(!gd->chargemode)
                     {
-			printf("sunxi_bmp_logo_display\n");
-			sunxi_bmp_display("bootlogo.bmp");
+                        printf("sunxi_bmp_logo_display\n");
+                        sunxi_bmp_display("bootlogo.bmp");
                     }
                     else
                     {
                         printf("sunxi_bmp_charger_display\n");
                         sunxi_bmp_display("bat\\battery_charge.bmp");
                     }
-#endif
+
 		}
 #endif
 #ifdef CONFIG_READ_LOGO_FOR_KERNEL

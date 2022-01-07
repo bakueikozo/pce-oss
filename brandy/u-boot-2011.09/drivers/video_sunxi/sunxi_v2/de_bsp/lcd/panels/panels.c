@@ -4,11 +4,14 @@
 #include "lp907qx.h"
 #include "starry768x1024.h"
 #include "B116XAN03.h"
+#include "h2009.h"
 
 extern __lcd_panel_t sl698ph_720p_panel;
 extern __lcd_panel_t lp079x01_panel;
+extern __lcd_panel_t h2009_panel;
 
 __lcd_panel_t* panel_array[] = {
+	&h2009_panel,
 	&default_panel,
 	&tft720x1280_panel,
 	&lp907qx_panel,

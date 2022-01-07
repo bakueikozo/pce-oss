@@ -55,7 +55,7 @@ SUNXI_VIDEO_OBJ = sunxi_v2/dev_disp.o\
 					sunxi_v2/de_bsp/lcd/lcd_panel_cfg.o  sunxi_v2/de_bsp/lcd/dev_lcd.o sunxi_v2/de_bsp/lcd/lcd_source_interface.o\
 					sunxi_v2/de_bsp/lcd/panels/panels.o sunxi_v2/de_bsp/lcd/panels/default_panel.o sunxi_v2/de_bsp/lcd/panels/tft720x1280.o sunxi_v2/de_bsp/lcd/panels/lp907qx.o\
 					sunxi_v2/de_bsp/lcd/panels/starry768x1024.o sunxi_v2/de_bsp/lcd/panels/sl698ph_720p.o\
-					sunxi_v2/de_bsp/lcd/panels/lp079x01.o sunxi_v2/de_bsp/lcd/panels/B116XAN03.o
+					sunxi_v2/de_bsp/lcd/panels/lp079x01.o sunxi_v2/de_bsp/lcd/panels/B116XAN03.o sunxi_v2/de_bsp/lcd/panels/h2009.o
 
 endif
 
